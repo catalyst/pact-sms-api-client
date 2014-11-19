@@ -1,0 +1,215 @@
+#!/usr/bin/env python
+
+"""pact-api-client [--help] [OPTIONS]
+
+This is a reference implementation of a client that can interact with
+the OAuth Enabled PaCT endpoints.  It requires Python 2.7 and the
+'restkit' library, available from https://pypi.python.org/pypi/restkit
+
+With a school key, this client allows you to:
+
+ - Check your school OAuth credentials work.
+ - Upload an IDE file to PaCT.
+ - Download a PaCT results CSV.
+
+With an SMS key, you can:
+ - List the schools that have selected you as an SMS.
+ - Create an OAuth key for a school.
+ - Delete the OAuth key for a school."""
+
+from __future__ import print_function
+
+import optparse
+import logging
+import pprint
+import json
+import sys
+
+import restkit
+
+def get_sms_data():
+    return {
+        'sms_product': 'PaCT Reference Client',
+        'sms_version': '0.1'
+        }
+
+
+def get_oauth_filter(key, secret):
+    return restkit.OAuthFilter('*', restkit.oauth2.Consumer(key=key, secret=secret))
+
+
+def oauth_test(oauth_filter, url):
+    resource = restkit.Resource(url + "/sms-api/v1/oauth-test", filters=[oauth_filter],
+                                use_proxy=True)
+    data = get_sms_data()
+
+    logging.info("Connecting to PaCT to test OAuth Credentials...")
+    response = resource.post(payload=resource.make_params(data))
+    logging.info("...complete")
+
+    result = json.load(response.body_stream())
+
+    print (pprint.pformat(result))
+
+
+def csv_download(oauth_filter, url, from_date=None, to_date=None):
+    resource = restkit.Resource(url + "/sms-api/v1/download-results-csv", filters=[oauth_filter],
+                                use_proxy=True)
+    data = {}
+    if to_date:
+        data['to_date'] = to_date
+    if from_date:
+        data['from_date'] = from_date
+
+    logging.info("Requesting results CSV from PaCT...")
+    response = resource.get(**resource.make_params(data))
+    logging.info("...complete")
+
+    print(response.body_string())
+
+
+def upload_ide(oauth_filter, url, filename):
+    ## Note, this is just the 'urlencoded' version.
+    data = get_sms_data()
+    with open(filename) as f:
+        data['file'] = f.read()
+
+    resource = restkit.Resource(url + "/sms-api/v1/upload-ide", filters=[oauth_filter],
+                                use_proxy=True)
+
+    logging.info("Uploading IDE file to PaCT...")
+    response = resource.post(payload=resource.make_params(data))
+    logging.info("...completed.")
+
+    print(response.body_string())
+
+
+def list_schools(oauth_filter, url):
+    resource = restkit.Resource(url + "/sms-api/v1/manage-keys", filters=[oauth_filter],
+                                use_proxy=True)
+
+    logging.info("Retrieving a list of my schools from PaCT...")
+    response = resource.get()
+    logging.info("...complete")
+
+    result = json.load(response.body_stream())
+
+    print (pprint.pformat(result))
+
+
+def create_key(oauth_filter, url, moe_school_id):
+    full_url = "%s/sms-api/v1/manage-keys/%s/create" % (url, moe_school_id)
+    resource = restkit.Resource(full_url, filters=[oauth_filter],
+                                use_proxy=True)
+
+    logging.info("Requesting a new key for school '%s' from PaCT..." % moe_school_id)
+    response = resource.post()
+    logging.info("...complete")
+
+    result = json.load(response.body_stream())
+    print (pprint.pformat(result))
+
+
+def burn_key(oauth_filter, url, moe_school_id):
+    full_url = "%s/sms-api/v1/manage-keys/%s/delete" % (url, moe_school_id)
+    resource = restkit.Resource(full_url, filters=[oauth_filter],
+                                use_proxy=True)
+
+    logging.info("Requestion removal of key for school '%s' from PaCT..." % moe_school_id)
+    response = resource.post()
+    logging.info("...complete")
+
+    result = json.load(response.body_stream())
+    print (pprint.pformat(result))
+
+
+def parse_options():
+    parser = optparse.OptionParser(usage=__doc__)
+
+    general_options = optparse.OptionGroup(parser, "General Options")
+    general_options.add_option("-v", "--verbose", dest="verbose",
+                      action="store_true",
+                      help="enable debugging output")
+
+    general_options.add_option("-k", "--key", dest="key")
+    general_options.add_option("-s", "--secret", dest="secret")
+    general_options.add_option("-u", "--url", dest="url",
+                               default="https://pact-sms-testing.catalystdemo.net.nz",
+                               help="URL of the instance of PaCT, "
+                               "defaults to %default")
+    parser.add_option_group(general_options)
+
+    csv_download = optparse.OptionGroup(parser, "CSV Result Download")
+    csv_download.add_option("-c", "--csv-download",
+                            help="Download PaCT results CSV.",
+                            action="store_true")
+    csv_download.add_option("-f", "--from-date", metavar="YYYY-MM-DD")
+    csv_download.add_option("-t", "--to-date", metavar="YYYY-MM-DD")
+    parser.add_option_group(csv_download)
+
+    oauth_test = optparse.OptionGroup(parser, "OAuth Endpoint Test")
+    oauth_test.add_option('-o', '--oauth-test',
+                          help='Ping the OAuth Endpoint Test',
+                          action='store_true')
+    parser.add_option_group(oauth_test)
+
+    upload_ide = optparse.OptionGroup(parser, "Upload IDE file")
+    upload_ide.add_option('-i', '--upload-ide',
+                          help="Upload an IDE file")
+    parser.add_option_group(upload_ide)
+
+    key_management = optparse.OptionGroup(parser, "Delegated Key Management")
+    key_management.add_option('-l', '--list-schools',
+                              action='store_true',
+                              help="List the schools using me as an SMS")
+    key_management.add_option('-n', '--new-key', metavar='SCHOOL_ID',
+                              help="Issue a new key for school with id SCHOOL_ID")
+    key_management.add_option('-b', '--burn-key', metavar='SCHOOL_ID',
+                              help="Burn key for school with id SCHOOL_ID")
+    parser.add_option_group(key_management)
+
+    options, args = parser.parse_args()
+
+    ## Some option sanity checks.
+    if not (options.key and options.secret):
+        parser.error("You must provide both a key and a secret. See --help for details.")
+    if options.url.endswith('/'):
+        parser.error("You don't want the trailing '/' in your URL")
+
+    return options, args
+
+
+def init_logging(verbose=False):
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(level=level,
+                        format='%(levelname)8s %(message)s')
+
+
+def main(options, args):
+    oauth_filter = get_oauth_filter(options.key, options.secret)
+
+    try:
+        if options.oauth_test:
+            oauth_test(oauth_filter, options.url)
+        if options.csv_download:
+            csv_download(oauth_filter, options.url, options.from_date, options.to_date)
+        if options.upload_ide:
+            upload_ide(oauth_filter, options.url, options.upload_ide)
+        if options.list_schools:
+            list_schools(oauth_filter, options.url)
+        if options.new_key:
+            create_key(oauth_filter, options.url, options.new_key)
+        if options.burn_key:
+            burn_key(oauth_filter, options.url, options.burn_key)
+    except restkit.errors.Unauthorized:
+        logging.error("Sorry, the server says your request was 'Unauthorized'")
+    except restkit.errors.ResourceNotFound:
+        logging.error("Sorry, the server says the resource you asked for was "
+                      "not found, check your URL setting or your school ID (if provided).")
+
+if __name__ == "__main__":
+    options, args = parse_options()
+    init_logging(options.verbose)
+    logging.debug("Options: %s",  unicode(options))
+    logging.debug("Args: %s",  unicode(args))
+    main(options, args)
