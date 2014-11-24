@@ -34,6 +34,29 @@ def get_sms_data():
         }
 
 
+def monkeypatch_client():
+    """Monkeypatch the restkit library so that it logs the body of the request."""
+    import restkit.client
+    def patched_perform(self, request):
+        body = request.body
+        result = self.old_perform(request)
+        logging.debug("The body of the request that was sent: %s", repr(body))
+        return result
+    restkit.client.Client.old_perform = restkit.client.Client.perform
+    restkit.client.Client.perform = patched_perform
+
+
+def monkeypatch_signature_method_hmac_sha1():
+    """Monkeypatch the OAuth library so it logs the base string used for signing"""
+    import restkit.oauth2
+    def patched_signing_base(self, request, consumer, token):
+        result = self.old_signing_base(request, consumer, token)
+        logging.debug("Signature base: %s", repr(result[1]))
+        return result
+    restkit.oauth2.SignatureMethod_HMAC_SHA1.old_signing_base = restkit.oauth2.SignatureMethod_HMAC_SHA1.signing_base
+    restkit.oauth2.SignatureMethod_HMAC_SHA1.signing_base = patched_signing_base
+
+
 def get_oauth_filter(key, secret):
     return restkit.OAuthFilter('*', restkit.oauth2.Consumer(key=key, secret=secret))
 
@@ -186,6 +209,9 @@ def init_logging(verbose=False):
 
 
 def main(options, args):
+    monkeypatch_client()
+    monkeypatch_signature_method_hmac_sha1()
+
     oauth_filter = get_oauth_filter(options.key, options.secret)
 
     try:
