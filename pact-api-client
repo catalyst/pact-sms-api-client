@@ -75,6 +75,22 @@ def oauth_test(oauth_filter, url):
     print (pprint.pformat(result))
 
 
+def json_download(oauth_filter, url, from_date=None, to_date=None):
+    resource = restkit.Resource(url + "/sms-api/v2/download-results.json", filters=[oauth_filter],
+                                use_proxy=True)
+    data = {}
+    if to_date:
+        data['to_date'] = to_date
+    if from_date:
+        data['from_date'] = from_date
+
+    logging.info("Requesting results JSON from PaCT...")
+    response = resource.get(**resource.make_params(data))
+    logging.info("...complete")
+
+    print(response.body_string())
+
+
 def csv_download(oauth_filter, url, from_date=None, to_date=None):
     resource = restkit.Resource(url + "/sms-api/v1/download-results-csv", filters=[oauth_filter],
                                 use_proxy=True)
@@ -157,7 +173,7 @@ def parse_options():
     general_options.add_option("-k", "--key", dest="key")
     general_options.add_option("-s", "--secret", dest="secret")
     general_options.add_option("-u", "--url", dest="url",
-                               default="https://pact-sms-testing.catalystdemo.net.nz",
+                               default="https://pact-sms-testing.example.com",
                                help="URL of the instance of PaCT, "
                                "defaults to %default")
     parser.add_option_group(general_options)
@@ -166,9 +182,18 @@ def parse_options():
     csv_download.add_option("-c", "--csv-download",
                             help="Download PaCT results CSV.",
                             action="store_true")
-    csv_download.add_option("-f", "--from-date", metavar="YYYY-MM-DD")
-    csv_download.add_option("-t", "--to-date", metavar="YYYY-MM-DD")
     parser.add_option_group(csv_download)
+
+    json_download = optparse.OptionGroup(parser, "JSON Result Download")
+    json_download.add_option("-j", "--json-download",
+                             help="Download PaCT results JSON.",
+                             action="store_true")
+    parser.add_option_group(json_download)
+
+    daterange = optparse.OptionGroup(parser, "Judgment Result Filtering")
+    daterange.add_option("-f", "--from-date", metavar="YYYY-MM-DD")
+    daterange.add_option("-t", "--to-date", metavar="YYYY-MM-DD")
+    parser.add_option_group(daterange)
 
     oauth_test = optparse.OptionGroup(parser, "OAuth Endpoint Test")
     oauth_test.add_option('-o', '--oauth-test',
@@ -219,6 +244,8 @@ def main(options, args):
             oauth_test(oauth_filter, options.url)
         if options.csv_download:
             csv_download(oauth_filter, options.url, options.from_date, options.to_date)
+        if options.json_download:
+            json_download(oauth_filter, options.url, options.from_date, options.to_date)
         if options.upload_ide:
             upload_ide(oauth_filter, options.url, options.upload_ide)
         if options.list_schools:
