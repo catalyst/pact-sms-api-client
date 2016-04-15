@@ -10,7 +10,7 @@ With a school key, this client allows you to:
 
  - Check your school OAuth credentials work.
  - Upload an IDE file to PaCT.
- - Download a PaCT results CSV.
+ - Download a PaCT/TWA results CSV.
 
 With an SMS key, you can:
  - List the schools that have selected you as an SMS.
@@ -23,7 +23,6 @@ import optparse
 import logging
 import pprint
 import json
-import sys
 
 import restkit
 
@@ -106,6 +105,20 @@ def csv_download(oauth_filter, url, from_date=None, to_date=None):
 
     print(response.body_string())
 
+def twa_csv_download(oauth_filter, url, from_date=None, to_date=None):
+    resource = restkit.Resource(url + "/sms-api/v1/download-twa-results-csv", filters=[oauth_filter],
+                                use_proxy=True)
+    data = {}
+    if to_date:
+        data['to_date'] = to_date
+    if from_date:
+        data['from_date'] = from_date
+
+    logging.info("Requesting results CSV from PaCT...")
+    response = resource.get(**resource.make_params(data))
+    logging.info("...complete")
+
+    print(response.body_string())
 
 def upload_ide(oauth_filter, url, filename):
     ## Note, this is just the 'urlencoded' version.
@@ -178,11 +191,17 @@ def parse_options():
                                "defaults to %default")
     parser.add_option_group(general_options)
 
-    csv_download = optparse.OptionGroup(parser, "CSV Result Download")
+    csv_download = optparse.OptionGroup(parser, "PaCT CSV Result Download")
     csv_download.add_option("-c", "--csv-download",
                             help="Download PaCT results CSV.",
                             action="store_true")
     parser.add_option_group(csv_download)
+
+    twa_csv_download = optparse.OptionGroup(parser, "TWA CSV Result Download")
+    twa_csv_download.add_option("-C", "--twa-csv-download",
+                            help="Download TWA results CSV.",
+                            action="store_true")
+    parser.add_option_group(twa_csv_download)
 
     json_download = optparse.OptionGroup(parser, "JSON Result Download")
     json_download.add_option("-j", "--json-download",
@@ -244,6 +263,8 @@ def main(options, args):
             oauth_test(oauth_filter, options.url)
         if options.csv_download:
             csv_download(oauth_filter, options.url, options.from_date, options.to_date)
+        if options.twa-csv_download:
+            twa_csv_download(oauth_filter, options.url, options.from_date, options.to_date)
         if options.json_download:
             json_download(oauth_filter, options.url, options.from_date, options.to_date)
         if options.upload_ide:
