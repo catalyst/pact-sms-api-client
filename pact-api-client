@@ -268,7 +268,7 @@ def main(options, args):
             oauth_test(oauth_filter, options.url)
         if options.csv_download:
             csv_download(oauth_filter, options.url, options.from_date, options.to_date)
-        if options.twa-csv_download:
+        if options.twa_csv_download:
             twa_csv_download(oauth_filter, options.url, options.from_date, options.to_date)
         if options.json_download:
             json_download(oauth_filter, options.url, options.from_date, options.to_date)
